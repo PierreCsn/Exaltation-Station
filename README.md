@@ -353,22 +353,46 @@ For the PoC, a limited RePoE-backed dataset is acceptable if the exact item clas
 
 The solver itself must remain independent of RePoE's schema so that upstream data sources can be replaced or supplemented later without rewriting the crafting engine.
 
+## Validated V0 baseline
+
+The following scope is **accepted as the V0 implementation baseline** and should remain deliberately narrow until the end-to-end solver loop is demonstrated:
+
+```text
+Item class: Bows
+Input: pasted PoE2 item text
+Crafts: Orb of Transmutation, Orb of Augmentation, Regal Orb, Exalted Orb
+Target: physical DPS threshold with an optional attack-speed threshold
+Objective: maximize success probability under a fixed budget
+Data: RePoE snapshot, manually cross-checked for the supported subset
+Output: recommended next action plus conditional branches
+```
+
+V0 should prove that Exaltation Station can:
+
+1. parse a bow from copied PoE2 item text;
+2. reconstruct its relevant current state;
+3. derive the eligible modifier pool for the supported actions;
+4. calculate weighted possible outcomes where the required data is available;
+5. evaluate pDPS and optional attack-speed target constraints;
+6. search the supported crafting branches under a fixed budget;
+7. recommend the next action and explain what to do after relevant outcomes.
+
+The V0 baseline intentionally excludes:
+
+- other item classes;
+- advanced crafting mechanics, Essences, Omens, or special systems;
+- live market prices;
+- trade-vs-craft optimization;
+- OR-Tools as a required dependency;
+- LLM decision-making;
+- a backend service;
+- exhaustive modeling of all PoE2 crafting mechanics.
+
+Scope should only expand after this baseline is demonstrated with manually verified test cases.
+
 ## Initial proof of concept
 
-The first milestone should deliberately be small.
-
-Suggested scope:
-
-- one item category
-- a limited set of relevant modifiers
-- a small number of crafting actions
-- deterministic item parsing for fixtures
-- simple target predicates
-- one search strategy
-- expected-cost or success-probability optimization
-- automated tests against manually verified crafting cases
-
-The proof of concept succeeds when the engine can take an initial item, a target, and a limited ruleset and independently return a sensible craft route.
+The proof of concept succeeds when the engine can take an initial bow, a target, the validated V0 ruleset, and a fixed budget and independently return a sensible conditional craft route.
 
 It does **not** require complete PoE2 data, live prices, a polished UI, AI integration, or OR-Tools.
 
