@@ -322,6 +322,37 @@ Every supported mechanic should therefore have tests validating known examples a
 
 When mechanics or probabilities are uncertain, the application should expose that uncertainty rather than presenting an invented exact number.
 
+## Initial data-source hypothesis
+
+For the first proof of concept, **RePoE PoE2 data is considered sufficient to start testing the solver**.
+
+The purpose of the first milestone is not to guarantee perfect live-patch fidelity across all of Path of Exile 2. It is to validate the core calculation loop with enough structured data to model a narrow crafting domain correctly.
+
+Working assumption:
+
+```text
+RePoE PoE2 snapshot
+  -> import / normalize
+  -> canonical Exaltation Station dataset
+  -> manually validate a narrow subset
+  -> run solver experiments
+```
+
+RePoE should therefore be treated as an **initial engineering data source**, not as unquestioned authoritative truth.
+
+Before expanding beyond the proof of concept, the project should add stronger freshness and provenance controls, including where practical:
+
+- upstream snapshot / commit identification
+- associated PoE2 patch version
+- import timestamp
+- consistency checks
+- manual verification of representative mod pools and weights
+- explicit marking of uncertain or community-inferred values
+
+For the PoC, a limited RePoE-backed dataset is acceptable if the exact item class, modifier pool, weights, and supported crafting actions used by the test cases are independently checked against another trusted reference or known in-game behavior.
+
+The solver itself must remain independent of RePoE's schema so that upstream data sources can be replaced or supplemented later without rewriting the crafting engine.
+
 ## Initial proof of concept
 
 The first milestone should deliberately be small.
