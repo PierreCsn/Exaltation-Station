@@ -1,45 +1,58 @@
 # Exaltation Station
 
-A Path of Exile 2 crafting solver focused on finding the best route from a current item to a target item under explicit constraints such as budget, minimum stats, acceptable risk, and open affixes.
+A Path of Exile 2 crafting engine and route solver focused on finding good crafting decisions from a current item toward a target under explicit constraints such as budget, minimum physical DPS, attack speed, acceptable risk, and open affixes.
 
-> Project status: concept / early prototype. The rules, data model, and solver strategy below are working hypotheses to validate with a narrow proof of concept before expanding scope.
+> Project status: concept / early prototype. The current priority is correctness of the item model, crafting rules, and probabilities before solver sophistication.
+
+## Project language
+
+English is the default language for the project, including documentation, issues, code comments, test names, and user-facing technical terminology.
 
 ## Goal
 
-Exaltation Station should answer a question like:
+Exaltation Station should eventually answer a question like:
 
-> "Given this current item, how should I craft toward my target while minimizing cost and avoiding bad branches?"
+> "Given this current item, what should I do next to maximize my chance of reaching the target within my budget?"
 
-The project is intended to be a **decision engine**, not just a crafting guide. It should model the current item, enumerate legal crafting actions, evaluate their outcomes, and recommend the next action according to a chosen objective.
+The project is intended to be a **decision engine**, not just a crafting guide.
 
-The long-term target is an interactive workflow:
+The long-term interaction is expected to look like this:
 
-1. Copy an item from PoE2.
+1. Copy an item from PoE2 using the detailed / advanced item text format.
 2. Paste it into Exaltation Station.
-3. Define the target in terms of useful outcomes rather than one exact mod combination.
-4. Ask the solver for the best route.
-5. Perform the suggested craft in-game.
-6. Paste the new item state.
+3. Define a target in terms of useful outcomes rather than one exact affix combination.
+4. Ask the engine for the best next action.
+5. Perform the action in-game.
+6. Paste the resulting item state.
 7. Recompute the best next action.
 
-The application should remain an **advisor**. It should not automate input or perform actions inside the game.
+Exaltation Station should remain an **advisor**. It should not automate game input or perform crafting actions inside PoE2.
+
+---
+
+## Engineering priority
+
+The project should be built in this order:
+
+```text
+correct mechanics
+  -> verified eligible mod pools
+  -> verified probability model
+  -> correct derived stats such as pDPS
+  -> engine proof
+  -> solver proof
+  -> UI and performance work
+```
+
+A sophisticated search algorithm built on an incorrect item or probability model would be worse than a small correct engine.
+
+---
 
 ## Core hypotheses
 
-### 1. Crafting is best represented as a state-transition problem
+### 1. Crafting is a state-transition problem
 
-An item is represented as a state:
-
-- base type
-- item level
-- rarity
-- prefixes
-- suffixes
-- mod tiers
-- mod tags / families where relevant
-- relevant special state required by crafting mechanics
-
-A crafting action transforms one state into one or more possible next states.
+An item is represented as a canonical state. A crafting action transforms that state into one or more possible next states.
 
 ```text
 Current item
@@ -51,369 +64,598 @@ Current item
                            +--> outcome C (pC)
 ```
 
-The solver therefore operates on a graph or decision tree rather than a static list of recipes.
+The full problem can therefore become a graph or decision tree.
 
-### 2. The rules engine should be deterministic even when the game is not
+### 2. The rules engine must be deterministic even when crafting is probabilistic
 
-For the same item state, crafting action, ruleset, and patch version, Exaltation Station should always produce the same set of possible outcomes and probabilities.
+For the same:
 
-Randomness belongs to the modeled game mechanic, not to the solver implementation.
+- item state;
+- crafting action;
+- game-data snapshot;
+- ruleset;
+- patch assumptions;
 
-This distinction is important:
+Exaltation Station should always generate the same legal outcome set and the same calculated probabilities.
 
-- **deterministic logic**: which actions are legal, which outcomes exist, how weights are calculated
-- **probabilistic mechanic**: which of those outcomes the game actually gives the player
+Randomness belongs to the modeled game mechanic, not to the implementation.
 
-### 3. Targets should be expressed as constraints, not exact recipes
+### 3. Targets are constraints, not recipes
 
-The solver should optimize for useful end states rather than one hard-coded affix combination.
-
-Example target:
-
-```text
-physical DPS >= 550
-attack speed >= 1.65
-budget <= 8 Divine
-at least 1 open suffix
-```
-
-Several different affix combinations may satisfy the same target.
-
-This should let the solver discover routes that a hand-written recipe would miss.
-
-### 4. The solver should optimize a policy, not just a sequence
-
-A useful craft plan is conditional.
+The solver should optimize for useful end states rather than require one exact affix combination.
 
 Example:
 
 ```text
-Use action A
-
-if result is strong:
-  continue with route B
-
-if result is acceptable:
-  continue with route C
-
-if result is bad:
-  reset / sell / stop
+physical DPS >= 550
+attack speed >= 1.65
 ```
 
-The result should therefore be a **decision policy** with stop conditions, not merely a fixed ordered list of currencies.
+Several different modifier combinations may satisfy the same target.
 
-### 5. Cost and risk are first-class optimization dimensions
+### 4. A useful route is eventually a policy, not just a fixed sequence
 
-Possible optimization modes may include:
-
-- minimum expected cost
-- maximum success probability under a fixed budget
-- minimum number of crafting steps
-- minimum probability of bricking the item
-- best expected value
-- weighted compromise between cost, success chance, and risk
-
-The first proof of concept only needs one or two simple objectives.
-
-### 6. Search-space control will matter more than raw compute
-
-Naively enumerating every possible crafting branch will become intractable very quickly.
-
-The solver will likely need some combination of:
-
-- state hashing / memoization
-- dominated-state pruning
-- depth limits
-- budget limits
-- beam search
-- best-first search / A*
-- dynamic programming where applicable
-- probability cutoffs for negligible branches
-
-The goal is not to explore every theoretically reachable item. The goal is to preserve branches that can still lead to a useful target.
-
-### 7. OR-Tools may be useful, but should not be a hard dependency initially
-
-Constraint programming is a good fit for questions such as:
-
-- does this state satisfy the target?
-- can any reachable combination satisfy the requested constraints?
-- which affix combinations are valid under a set of requirements?
-
-However, the full crafting problem also contains sequential probabilistic decisions.
-
-Working assumption:
+A real craft plan is conditional:
 
 ```text
-rules engine      -> models what crafting actions can do
-constraint layer  -> evaluates whether states satisfy the target
-search solver     -> chooses the best sequence / policy
+perform action A
+
+if result is strong:
+  continue
+
+if result is usable but suboptimal:
+  take an alternate route
+
+if result is bad:
+  stop / reset / sell
 ```
 
-The first implementation should use simple TypeScript predicates for constraints. OR-Tools or another solver should only be introduced if it provides a demonstrated advantage.
+This is the long-term solver target.
+
+### 5. Cost and risk are first-class inputs
+
+Possible future optimization objectives include:
+
+- maximum success probability under a fixed budget;
+- minimum expected cost;
+- minimum brick probability;
+- minimum crafting steps;
+- expected value;
+- weighted compromises between cost, probability, and risk.
+
+The initial implementation should support only the minimum objective necessary to validate the engine.
+
+### 6. Search-space control will matter later
+
+Once genuinely competing crafting actions are supported, naïve exhaustive enumeration may become too expensive.
+
+Possible techniques include:
+
+- state hashing and memoization;
+- dominated-state pruning;
+- budget and depth limits;
+- best-first search;
+- beam search;
+- dynamic programming where applicable;
+- probability cutoffs for negligible branches.
+
+None of these should be implemented before profiling demonstrates a need.
+
+### 7. OR-Tools is optional and deferred
+
+Constraint programming may eventually help with complex target combinations, but it is not required for the first implementation.
+
+Initial target evaluation should use normal TypeScript predicates.
+
+```text
+rules engine      -> what can happen
+constraint layer  -> whether an item satisfies the target
+search solver     -> which action or policy is best
+```
+
+OR-Tools or another constraint solver should only be introduced after a concrete use case demonstrates that it is better than simpler code.
+
+---
 
 ## Proposed architecture
 
-The initial implementation is expected to be a static web application suitable for GitHub Pages.
+The initial application should be compatible with static hosting such as GitHub Pages.
 
 ```text
-GitHub Pages
+Static web application
   |
-  +-- UI
   +-- item parser
-  +-- rules engine
+  +-- canonical item model
+  +-- normalized PoE2 data
+  +-- crafting rules engine
+  +-- derived-stat calculator
   +-- target evaluator
-  +-- solver
-  +-- versioned PoE2 data
-  +-- Web Worker
+  +-- V0a decision logic
+  +-- later: route solver
+  +-- UI
 ```
 
-### Why a static application first?
+### No backend by default
 
-A client-side implementation offers several advantages for the first versions:
+A client-side implementation gives us:
 
-- almost no infrastructure to maintain
-- cheap or free hosting
-- easy public deployment through GitHub Pages
-- deterministic, reproducible local calculations
-- no server required for the core solver
-- straightforward open-source distribution
+- very little infrastructure to maintain;
+- deterministic local calculations;
+- cheap or free hosting;
+- simple public distribution;
+- easy reproducibility of a calculation against a known data snapshot.
 
-A backend should only be added when a concrete requirement justifies it, for example live market aggregation, heavy compute, shared caches, or APIs that cannot be queried safely from the browser.
+A backend should only be added for a demonstrated requirement such as live market aggregation, heavy shared computation, or an API that cannot safely be called from the browser.
 
-## Data model hypothesis
+### No Web Worker until profiling requires it
 
-Game data should be separate from solver logic and versioned by PoE2 patch.
+The first narrow implementation should run in-process.
 
-```text
-src/
-  core/
-  parser/
-  rules/
-  solver/
-  constraints/
-  ui/
+A Web Worker should only be introduced if real measurements show that calculations block the UI. V0a is intentionally too small to justify concurrency infrastructure in advance.
 
-data/
-  poe2-<patch>/
-    bases.json
-    modifiers.json
-    currencies.json
-    crafting-rules.json
+---
+
+## Canonical data model
+
+Game-data definitions and rolled item state must be separate concepts.
+
+### Base item definition
+
+A base definition contains immutable game data required to evaluate a bow.
+
+Conceptually:
+
+```ts
+interface BaseItemDefinition {
+  id: string;
+  itemClass: string;
+  basePhysicalMin: number;
+  basePhysicalMax: number;
+  baseAttacksPerSecond: number;
+  tags: string[];
+}
 ```
 
-The objective is to make patch updates primarily a data/rules maintenance task rather than a solver rewrite.
+### Modifier definition
 
-Every probability shown to users should be traceable to the exact rules/data version used by the calculation.
+A modifier definition represents what may spawn, not what actually rolled on an item.
 
-## Item input hypothesis
+Conceptually:
 
-The preferred input is the textual item representation copied from the game.
+```ts
+interface ModifierDefinition {
+  id: string;
+  generationType: "prefix" | "suffix";
+  group: string;
+  requiredItemLevel: number;
+  tags: string[];
+  generationWeights: GenerationWeightRule[];
+  stats: StatDefinition[];
+}
+```
 
-The parser should convert it into a canonical internal `ItemState`.
+The canonical model must preserve conditional / ordered generation-weight rules when the upstream data uses them.
+
+**Do not flatten conditional generation weights into one global `spawnWeight` number.**
+
+Eligibility and weight must be resolved against the actual item/base context.
+
+### Rolled modifier
+
+An affix on a real item is a specific roll of a modifier definition.
+
+```ts
+interface ModifierRoll {
+  definitionId: string;
+  tier?: number;
+  values: Record<string, number>;
+}
+```
+
+This distinction matters because a tier can expose a value range while the real item contains one specific value inside that range.
+
+### Item state
 
 Conceptually:
 
 ```ts
 interface ItemState {
-  baseType: string;
+  baseTypeId: string;
   itemLevel: number;
   rarity: Rarity;
-  prefixes: Modifier[];
-  suffixes: Modifier[];
+  quality: number;
+  prefixes: ModifierRoll[];
+  suffixes: ModifierRoll[];
 }
 ```
 
-The exact schema should remain minimal until real PoE2 mechanics prove additional fields are required.
+Base physical damage and base attack speed should come from the referenced `BaseItemDefinition` rather than be duplicated across every state.
 
-## Craft-action hypothesis
+Additional fields should only be added when a supported PoE2 mechanic proves they are required.
 
-Each supported crafting mechanic should expose two basic operations:
+---
+
+## Item input hypothesis
+
+### V0a input
+
+V0a should target **English advanced / detailed copied item text**, preferably the format that exposes enough modifier metadata to identify prefixes, suffixes, tiers, and values reliably.
+
+The parser should reject unsupported or ambiguous input rather than guess.
+
+The first parser does not need to support:
+
+- every game language;
+- screenshots or OCR;
+- fuzzy modifier identification;
+- every item class;
+- every historical item-text format.
+
+Tests should use committed text fixtures representing real copied bows.
+
+---
+
+## Derived-stat model
+
+The pDPS target makes the stat model part of the core engine, not a UI concern.
+
+At minimum the calculation must correctly account for the supported interactions involving:
+
+- bow base physical damage;
+- local physical-damage modifiers;
+- flat added physical damage where applicable;
+- local attack-speed modifiers;
+- quality;
+- actual rolled modifier values rather than only tiers.
+
+The exact calculation order should be covered by manually verified fixtures before being treated as authoritative.
+
+---
+
+## Craft-action model
+
+Each supported crafting action should expose eligibility and possible outcomes.
+
+Conceptually:
 
 ```ts
 interface CraftAction {
-  isAvailable(item: ItemState): boolean;
-  outcomes(item: ItemState): Outcome[];
+  isAvailable(item: ItemState, context: CraftContext): boolean;
+  outcomes(item: ItemState, context: CraftContext): OutcomeSet;
 }
+```
 
+An outcome should contain enough information for deterministic evaluation:
+
+```ts
 interface Outcome {
-  probability: number;
+  probability: number | "unknown";
   item: ItemState;
   cost: Cost;
 }
 ```
 
-This creates a clean boundary between PoE2 rules and search algorithms.
+This creates a clean boundary between PoE2 rules and future search algorithms.
 
-## Target model hypothesis
+---
 
-A target should be evaluable against any item state.
+## Probability model
 
-Initially this can simply be a collection of predicates, for example:
+Probability accuracy is a critical project risk.
+
+There are at least two distinct probability layers:
+
+```text
+1. probability that a modifier / tier is selected
+2. probability of the numeric roll inside that modifier's allowed range
+```
+
+V0a must not silently treat these as the same problem.
+
+Modifier-selection probabilities should be derived from validated eligible pools and generation weights.
+
+Numeric roll distributions must be explicitly verified before Exaltation Station claims an exact probability for thresholds such as `pDPS >= X` when success depends on the value rolled inside an affix range.
+
+If the numeric distribution is not yet validated, the engine should:
+
+- expose the assumption explicitly; or
+- return a probability range / unknown result; or
+- restrict the test case to outcomes where the uncertain roll distribution does not affect the assertion.
+
+**Never invent precision.**
+
+---
+
+## Target model
+
+A target should be evaluable against any supported item state.
+
+V0a targets:
 
 ```ts
-pdps(item) >= 550
-attackSpeed(item) >= 1.65
-openSuffixes(item) >= 1
+pdps(item) >= targetPdps
 ```
 
-Later, the target language may support richer constraints, scoring, alternatives, and preferences.
+with optional:
 
-## Solver output hypothesis
+```ts
+attackSpeed(item) >= targetAttackSpeed
+```
 
-The solver should not pretend that probabilistic crafts are guaranteed.
+More expressive target languages should be deferred.
 
-A useful result should include at least:
+---
 
-- recommended next action
-- estimated cost
-- success probability where calculable
-- relevant failure branches
-- stop / reset conditions
-- assumptions used by the calculation
+## Cost model
 
-Longer term, it may expose a complete decision tree or compact policy.
+V0a should not depend on live market prices.
 
-Example:
+To support a fixed budget, use an explicit configurable cost model for the supported crafting components.
+
+Conceptually:
+
+```ts
+interface CostModel {
+  transmutation: number;
+  augmentation: number;
+  regal: number;
+  exalted: number;
+}
+```
+
+The values may initially be manually supplied normalized cost units.
+
+This means V0a can test budget-aware decision logic without pretending to know current Divine-equivalent prices.
+
+Live pricing and trade-vs-craft optimization remain separate future concerns.
+
+---
+
+## Data ingestion hypothesis
+
+External sources should never leak their schema directly into the crafting engine.
 
 ```text
-Recommended action: <craft action>
-
-If outcome A:
-  continue with action B
-
-If outcome B:
-  item remains usable; switch to route C
-
-If outcome C:
-  stop and reset
-
-Expected cost: X
-Success probability within budget: Y%
+external PoE2 data
+  -> snapshot
+  -> importer
+  -> normalization
+  -> validation
+  -> canonical Exaltation Station data
+  -> crafting engine
 ```
 
-## Market-price hypothesis
-
-Live pricing is useful but should not be required for the first solver.
-
-The core engine should work with an abstract cost model. Prices can initially be:
-
-- manually entered
-- bundled snapshots
-- later sourced from an appropriate API or market data provider
-
-This keeps the crafting engine independent from market availability and API reliability.
-
-A future version could compare:
+Suggested layout:
 
 ```text
-expected craft cost
-vs.
-market cost of an equivalent item
+src/
+  parser/
+  model/
+  rules/
+  stats/
+  constraints/
+  solver/
+  ui/
+
+ingestion/
+  importers/
+  validators/
+
+data/
+  fixtures/
+  normalized/
 ```
 
-and recommend crafting, buying, or stopping.
+The final repository structure should remain as small as the implementation allows; this is a conceptual separation, not a requirement to create every directory immediately.
 
-## Data quality is a critical dependency
-
-The quality of the solver can never exceed the quality of its PoE2 rules and modifier data.
-
-Every supported mechanic should therefore have tests validating known examples and edge cases.
-
-When mechanics or probabilities are uncertain, the application should expose that uncertainty rather than presenting an invented exact number.
+---
 
 ## Initial data-source hypothesis
 
-For the first proof of concept, **RePoE PoE2 data is considered sufficient to start testing the solver**.
+For the first proof of concept, **RePoE PoE2 data is considered sufficient to start testing the engine**.
 
-The purpose of the first milestone is not to guarantee perfect live-patch fidelity across all of Path of Exile 2. It is to validate the core calculation loop with enough structured data to model a narrow crafting domain correctly.
+Initial upstream source:
+
+- `repoe-fork/poe2`
 
 Working assumption:
 
 ```text
 RePoE PoE2 snapshot
   -> import / normalize
-  -> canonical Exaltation Station dataset
-  -> manually validate a narrow subset
-  -> run solver experiments
+  -> canonical Exaltation Station subset
+  -> manually validate the supported bow data
+  -> run engine tests
 ```
 
-RePoE should therefore be treated as an **initial engineering data source**, not as unquestioned authoritative truth.
+RePoE is an **initial engineering source**, not unquestioned authoritative truth.
 
-Before expanding beyond the proof of concept, the project should add stronger freshness and provenance controls, including where practical:
+Each imported snapshot should eventually record:
 
-- upstream snapshot / commit identification
-- associated PoE2 patch version
-- import timestamp
-- consistency checks
-- manual verification of representative mod pools and weights
-- explicit marking of uncertain or community-inferred values
+- upstream repository;
+- upstream commit / snapshot identifier;
+- associated game patch when known;
+- import timestamp;
+- validation status;
+- provenance for uncertain or community-inferred values where relevant.
 
-For the PoC, a limited RePoE-backed dataset is acceptable if the exact item class, modifier pool, weights, and supported crafting actions used by the test cases are independently checked against another trusted reference or known in-game behavior.
+For V0a, the exact bow bases, modifier pools, generation weights, and supported crafting rules used in acceptance tests should be independently cross-checked against another trusted reference or known in-game behavior.
 
-The solver itself must remain independent of RePoE's schema so that upstream data sources can be replaced or supplemented later without rewriting the crafting engine.
+The engine must remain independent of the RePoE schema so another source can replace or supplement it later.
 
-## Validated V0 baseline
+### Data redistribution caution
 
-The following scope is **accepted as the V0 implementation baseline** and should remain deliberately narrow until the end-to-end solver loop is demonstrated:
+The repository is public. Do not automatically vendor or redistribute the complete upstream game dataset until the relevant licensing / redistribution terms have been reviewed.
+
+The safest initial path is:
 
 ```text
-Item class: Bows
-Input: pasted PoE2 item text
-Crafts: Orb of Transmutation, Orb of Augmentation, Regal Orb, Exalted Orb
-Target: physical DPS threshold with an optional attack-speed threshold
-Objective: maximize success probability under a fixed budget
-Data: RePoE snapshot, manually cross-checked for the supported subset
-Output: recommended next action plus conditional branches
+ingestion code
++
+small derived / manually validated V0a fixtures
 ```
 
-V0 should prove that Exaltation Station can:
+rather than copying a complete external database into the repository by default.
 
-1. parse a bow from copied PoE2 item text;
-2. reconstruct its relevant current state;
-3. derive the eligible modifier pool for the supported actions;
-4. calculate weighted possible outcomes where the required data is available;
-5. evaluate pDPS and optional attack-speed target constraints;
-6. search the supported crafting branches under a fixed budget;
-7. recommend the next action and explain what to do after relevant outcomes.
+---
 
-The V0 baseline intentionally excludes:
+# Validated development baseline
+
+## V0a — Crafting engine proof
+
+The previously discussed V0 is now classified more precisely as **V0a: engine proof**.
+
+Its purpose is to prove that Exaltation Station models a small part of PoE2 crafting correctly.
+
+### Scope
+
+```text
+Item class: Bows only
+Input: English advanced / detailed copied item text
+Crafts:
+  - Orb of Transmutation
+  - Orb of Augmentation
+  - Regal Orb
+  - Exalted Orb
+Target:
+  - physical DPS threshold
+  - optional attack-speed threshold
+Budget:
+  - fixed budget using a configurable normalized CostModel
+Data:
+  - RePoE snapshot
+  - manually cross-checked supported subset
+Output:
+  - legal outcomes
+  - probabilities where validated
+  - derived stats
+  - continue / stop recommendation
+```
+
+### Why this is engine proof rather than solver proof
+
+With this restricted currency set, much of the crafting sequence is mechanically constrained.
+
+The main decisions are often whether a current result is good enough to continue spending currency or whether the process should stop.
+
+That is enough to validate:
+
+- parsing;
+- item-state reconstruction;
+- modifier eligibility;
+- generation-weight handling;
+- outcome generation;
+- probability calculations;
+- pDPS calculations;
+- cost-aware continue / stop logic.
+
+It is **not enough to prove that a general route solver can choose intelligently between several genuinely competing crafting strategies**.
+
+### V0a success criteria
+
+V0a is complete when manually verified fixtures demonstrate that the engine can:
+
+1. parse supported copied bow text deterministically;
+2. identify the correct base and rolled affixes;
+3. reconstruct quality and relevant item state;
+4. derive the correct eligible modifier pool for each supported action;
+5. correctly exclude blocked modifier groups and invalid tiers;
+6. resolve the correct conditional generation weights;
+7. produce outcome probabilities that sum correctly where the model is fully known;
+8. calculate resulting attack speed and pDPS correctly;
+9. enforce a fixed normalized budget;
+10. return the expected continue / stop recommendation for known cases.
+
+A polished UI is not required to close V0a.
+
+### Minimum acceptance fixture set
+
+Before expanding scope, create a small suite of manually verified bow cases covering at least:
+
+- a Normal bow eligible for Transmutation;
+- a Magic bow with one affix eligible for Augmentation;
+- a full Magic bow eligible for Regal;
+- a Rare bow eligible for Exalted;
+- an item where modifier groups remove otherwise plausible outcomes;
+- a case where actual roll values change pDPS enough to affect the target decision.
+
+The exact number of fixtures is less important than proving these mechanics independently.
+
+---
+
+## V0b — Solver proof
+
+V0b starts only after V0a passes its acceptance tests.
+
+V0b should add **exactly one meaningful source of competing crafting decisions** so the project can demonstrate route optimization rather than only outcome simulation and continue / stop logic.
+
+The additional mechanic should be selected based on:
+
+- data availability;
+- confidence in its rules;
+- usefulness for bow crafting;
+- ability to create genuinely competing routes;
+- minimal implementation complexity.
+
+V0b succeeds when the same starting item can plausibly follow more than one legal strategy and the solver can justify why one route is preferable under the chosen objective and budget.
+
+Do not add several advanced crafting systems at once.
+
+---
+
+## Explicitly deferred
+
+The following are not required for V0a:
 
 - other item classes;
-- advanced crafting mechanics, Essences, Omens, or special systems;
-- live market prices;
+- Essences, Omens, or broad advanced crafting support;
+- a general-purpose crafting DSL;
+- live market pricing;
 - trade-vs-craft optimization;
-- OR-Tools as a required dependency;
-- LLM decision-making;
+- OR-Tools;
+- Web Workers;
 - a backend service;
-- exhaustive modeling of all PoE2 crafting mechanics.
+- LLM decision-making;
+- screenshot / OCR item parsing;
+- multilingual item parsing;
+- exhaustive simulation of every PoE2 mechanic.
 
-Scope should only expand after this baseline is demonstrated with manually verified test cases.
+An LLM may eventually be useful as an optional interface for translating natural-language goals into formal constraints and explaining solver results. It must not be the authority for crafting rules or probabilities.
 
-## Initial proof of concept
+---
 
-The proof of concept succeeds when the engine can take an initial bow, a target, the validated V0 ruleset, and a fixed budget and independently return a sensible conditional craft route.
+## Licensing and public-project hygiene
 
-It does **not** require complete PoE2 data, live prices, a polished UI, AI integration, or OR-Tools.
+Before accepting significant external contributions or redistributing external datasets:
 
-## What Exaltation Station is not
+- choose an explicit license for Exaltation Station's own source code;
+- verify the redistribution terms of imported game/community data;
+- preserve source attribution and provenance where required;
+- keep the public non-affiliation disclaimer visible.
 
-At least initially, this project is not intended to be:
-
-- an in-game automation bot
-- a macro system
-- a generic LLM crafting chatbot
-- a replacement for deterministic game data
-- a full market-trading platform
-- a complete simulator of every PoE2 mechanic from day one
-
-An LLM may eventually be useful as an optional interface for translating natural-language goals into constraints and explaining solver results. It should not be the authority for crafting rules or probabilities.
+---
 
 ## Design principle
 
-**Model the game accurately, keep the engine deterministic, and add complexity only when a real crafting case requires it.**
+**Model the game accurately, keep the core deterministic, verify probabilities, and add complexity only when a real crafting case requires it.**
 
-The project should favor a small, testable core over an ambitious architecture built before the underlying crafting model has been validated.
+The preferred progression is:
+
+```text
+small + correct
+  -> tested
+  -> useful
+  -> optimized
+```
+
+not:
+
+```text
+large architecture
+  -> hope the model is correct later
+```
+
+---
 
 ## Disclaimer
 
